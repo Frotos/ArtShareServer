@@ -1,79 +1,49 @@
+using System.Security.Claims;
 using System.Threading.Tasks;
+using ArtShareServer.Infrastructure.Authentication.Models;
 using ArtShareServer.Models;
 using ArtShareServer.Models.Requests;
 using ArtShareServer.Repositories.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Newtonsoft.Json.Linq;
 
 namespace ArtShareServer.Controllers {
   //TODO: Create other endpoints
   [ApiController]
   [Route("api/[controller]")]
   public class ReportsController : ControllerBase {
-    private readonly ISessionRepository _sessionRepository;
     private readonly IContentReportRepository _contentReportRepository;
     private readonly ICommentReportRepository _commentReportRepository;
+    private readonly IUserRepository _userRepository;
     
-    public ReportsController(ISessionRepository sessionRepository, IContentReportRepository contentReportRepository, ICommentReportRepository commentReportRepository) {
-      _sessionRepository = sessionRepository;
+    public ReportsController(IContentReportRepository contentReportRepository, ICommentReportRepository commentReportRepository, IUserRepository userRepository) {
       _contentReportRepository = contentReportRepository;
       _commentReportRepository = commentReportRepository;
+      _userRepository = userRepository;
     }
 
     [Route("content")]
     [HttpPost]
+    [Authorize(AuthenticationSchemes = AuthSchemeConstants.AuthSchemeName)]
     public async Task<IActionResult> Create([FromBody] CreateContentReportRequest request) {
-      if (Request.Headers.ContainsKey("SessionId")) {
-        var sessionId = Request.Headers["SessionId"].ToString();
-        var session = await _sessionRepository.Get(sessionId);
-        var user = session.User;
+      var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
 
-        if (user != null) {
-          var reportToCreate = new ContentReport() {ContentId = request.ImageContentId, UserId = user.Id};
-          var report = await _contentReportRepository.Create(reportToCreate);
-
-          if (report != null) {
-            JObject jObject = new JObject {{"id", new JValue(report.Id)}};
-            return Ok(jObject.ToString());
-          } else {
-            // TODO: Write error message
-            return BadRequest();
-          }
-        } else {
-          // TODO: Write error message
-          return Unauthorized();
-        }
-      } else {
-        return BadRequest("Can't find session id in request headers");
-      }
+      var reportToCreate = new ContentReport {ContentId = request.ContentId, UserId = userId};
+      var report = await _contentReportRepository.Create(reportToCreate);
+      
+      return Ok(new {report.Id});
     }
-    
+
     [Route("comment")]
     [HttpPost]
+    [Authorize(AuthenticationSchemes = AuthSchemeConstants.AuthSchemeName)]
     public async Task<IActionResult> Create([FromBody] CreateCommentReportRequest request) {
-      if (Request.Headers.ContainsKey("SessionId")) {
-        var sessionId = Request.Headers["SessionId"].ToString();
-        var session = await _sessionRepository.Get(sessionId);
-        var user = session.User;
+      var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
 
-        if (user != null) {
-          var reportToCreate = new CommentReport() {CommentId = request.CommentId, UserId = user.Id};
-          var report = await _commentReportRepository.Create(reportToCreate);
+      var reportToCreate = new CommentReport() {CommentId = request.CommentId, UserId = userId};
+      var report = await _commentReportRepository.Create(reportToCreate);
 
-          if (report != null) {
-            JObject jObject = new JObject {{"id", new JValue(report.Id)}};
-            return Ok(jObject.ToString());
-          } else {
-            // TODO: Write error message
-            return BadRequest();
-          }
-        } else {
-          // TODO: Write error message
-          return Unauthorized();
-        }
-      } else {
-        return BadRequest("Can't find session id in request headers");
-      }
+      return Ok(new {report.Id});
     }
   }
 }

@@ -1,34 +1,27 @@
 using System.Collections.Generic;
-using System.ComponentModel.DataAnnotations.Schema;
 using System.Diagnostics.CodeAnalysis;
-using System.Runtime.Serialization;
 using ArtShareServer.Models.Base;
-using Newtonsoft.Json;
 
 namespace ArtShareServer.Models {
-  [DataContract(IsReference = true)]
-  [JsonObject(IsReference = false)]
   public class User : IModel {
-    [DataMember] public int Id { get; set; }
-    [DataMember] public string Username { get; set; }
-    [DataMember] public string Email { get; set; }
-    [DataMember] [NotNull] public string Password { get; set; }
+    public int Id { get; set; }
+    public string Username { get; set; }
+    public string Email { get; set; }
+    [NotNull] public string Password { get; set; }
     public int AvatarId { get; set; }
-    [DataMember] public Avatar Avatar { get; set; }
-    [JsonIgnore] public List<ContentLike> Likes { get; set; }
-    [JsonIgnore] public List<ContentDislike> Dislikes { get; set; }
-    [JsonIgnore] public List<CommentLike> CommentLikes { get; set; }
-    [JsonIgnore] public List<CommentDislike> CommentDislikes { get; set; }
-    [DataMember] public int FollowersCount { get; set; }
-    [DataMember] public int FollowingsCount { get; set; }
-    [DataMember] public int PostsCount { get; set; }
-    [DataMember] [NotMapped] public bool IsFollowedByUser { get; set; }
-
-    [JsonIgnore] public List<Following> Followings { get; set; }
-    [JsonIgnore] public List<Following> Followers { get; set; }
-    [JsonIgnore] public List<ContentReport> ContentReports { get; set; }
-    [JsonIgnore] public List<CommentReport> CommentReports { get; set; }
-    [JsonIgnore] public List<Vote> Votes { get; set; }
+    public Avatar Avatar { get; set; }
+    public List<ContentLike> Likes { get; set; }
+    public List<ContentDislike> Dislikes { get; set; }
+    public List<CommentLike> CommentLikes { get; set; }
+    public List<CommentDislike> CommentDislikes { get; set; }
+    public int FollowersCount { get; set; }
+    public int FollowingsCount { get; set; }
+    public int PostsCount { get; set; }
+    public List<Following> Followings { get; set; }
+    public List<Following> Followers { get; set; }
+    public List<ContentReport> ContentReports { get; set; }
+    public List<CommentReport> CommentReports { get; set; }
+    public List<Comment> Comments { get; set; }
 
     public User() {
       Likes = new List<ContentLike>();

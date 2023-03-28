@@ -1,212 +1,115 @@
-using System;
-using System.Diagnostics.CodeAnalysis;
-using System.Linq;
+using System.Security.Claims;
 using System.Threading.Tasks;
-using ArtShareServer.Exceptions;
-using ArtShareServer.Models;
+using ArtShareServer.Infrastructure.Authentication.Models;
+using ArtShareServer.Models.DTOs;
 using ArtShareServer.Models.Requests;
 using ArtShareServer.Repositories.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 
 namespace ArtShareServer.Controllers {
   [ApiController]
   [Route("api/[controller]")]
   public class ContentController : ControllerBase {
-    private readonly EFDBContext _context;
     private readonly IContentRepository _contentRepository;
+    private readonly IUserRepository _userRepository;
 
-    public ContentController(EFDBContext context, IContentRepository contentRepository) {
-      _context = context;
+    public ContentController(IContentRepository contentRepository, IUserRepository userRepository) {
       _contentRepository = contentRepository;
+      _userRepository = userRepository;
+    }
+    
+    [HttpPost]
+    [Authorize(AuthenticationSchemes = AuthSchemeConstants.AuthSchemeName)]
+    public async Task<IActionResult> Create([FromBody] ContentDto content) {
+      var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
+
+      var contentId = await _contentRepository.Create(content, userId);
+      
+      return Ok(new {Id = contentId, Message = "Content uploaded"});
     }
 
-    // TODO: Refactor to similar style like in CommentsController
-    [HttpGet]
-    public IActionResult Get() {
-      if (Request.Headers.ContainsKey("UserId")) {
-        if (int.TryParse(Request.Headers["UserId"], out int userId)) {
-          var images = _contentRepository.Get(userId);
-
-          return Ok(JsonConvert.SerializeObject(images)); 
-        } else {
-          return BadRequest("Passed incorrect user id");
-        }
-      } else {
-        return BadRequest("User id in headers not found");
-      }
-    }
-
-    // TODO: Refactor to similar style like in CommentsController
     [Route(("{id:int}"))]
     [HttpGet]
     public IActionResult Get(int id) {
-      var image = _contentRepository.GetSingle(id);
+      var content = _contentRepository.GetSingle(id);
 
-      if (image != null) {
-        return Ok(JsonConvert.SerializeObject(image));
-      } else {
-        return NotFound("Content with provided id doesn't exist");
-      }
+      return Ok(content);
     }
-
-    // To get content authorizations isn't required
+    
     [Route("page/{page:int}")]
     [HttpGet]
+    [Authorize(AuthenticationSchemes = AuthSchemeConstants.AuthSchemeName)]
     public async Task<IActionResult> GetPaged(int page, [FromQuery] ContentFiltersRequest filtersRequest) {
-      if (page > 0) {
-        int.TryParse(Request.Headers["UserId"], out int userId);
-        var images = await _contentRepository.GetPaged(page, userId, filtersRequest);
-    
-        if (images == null) {
-          return NotFound("Page cannot be found");
-        }
-    
-        return Ok(JsonConvert.SerializeObject(images));
-      } else {
-        return BadRequest("Page can't be less than 1");
-      }
+      var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
+      var content = await _contentRepository.GetPaged(page, userId, filtersRequest);
+
+      return Ok(content);
     }
 
-    // TODO: Refactor to similar style like in CommentsController
-    [HttpPost]
-    public async Task<IActionResult> Create([FromBody] Content content) {
-      int.TryParse(Request.Headers["UserId"], out int userId);
+    [HttpPut]
+    [Authorize(AuthenticationSchemes = AuthSchemeConstants.AuthSchemeName)]
+    public async Task<IActionResult> Update([FromBody] UpdateContentRequest updatedContent) {
+      var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
 
-      var contentId = await _contentRepository.Create(content, userId);
-
-      if (contentId > 0) {
-        JObject jObject = new JObject {{"id", new JValue(contentId)}};
-        return Ok(jObject.ToString());
-      }
-
-      return BadRequest();
+      await _contentRepository.Update(updatedContent, userId);
+      
+      return Ok(new {Message = "Content uploaded"});
     }
 
     [Route("{id:int}")]
     [HttpDelete]
-    public IActionResult Delete(int id) {
-      if (Request.Headers.ContainsKey("SessionId")) {
-        var sessionId = Request.Headers["SessionId"].ToString();
-        var user = _context.Sessions.Include(s => s.User).FirstOrDefault(s => s.Id == sessionId)?.User;
-
-        try {
-          _contentRepository.Delete(id, user);
-          return Ok("Content successfully deleted");
-        }
-        catch (UnauthorizedAccessException unauthorizedAccessException) {
-          return Unauthorized(unauthorizedAccessException.Message);
-        }
-        catch (ContentNotFoundException argumentNullException) {
-          return NotFound(argumentNullException.Message);
-        }
-      } else {
-        return BadRequest("Can't find session id in request headers");
-      }
+    [Authorize(AuthenticationSchemes = AuthSchemeConstants.AuthSchemeName)]
+    public async Task<IActionResult> Delete(int id) {
+      var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
+      var user = await _userRepository.Get(userId);
+      
+      await _contentRepository.Delete(id, user);
+      return Ok("Content successfully deleted");
     }
 
     [Route("like/{id:int}")]
     [HttpPost]
-    public IActionResult Like(int id) {
-      if (Request.Headers.ContainsKey("SessionId")) {
-        var sessionId = Request.Headers["SessionId"].ToString();
-        var user = _context.Sessions.Include(s => s.User).FirstOrDefault(s => s.Id == sessionId)?.User;
-
-        try {
-          _contentRepository.Like(id, user);
-          return Ok("Content successfully unliked");
-        }
-        catch (ContentNotFoundException contentNotFoundException) {
-          return NotFound(contentNotFoundException.Message);
-        }
-        catch (UnauthorizedAccessException unauthorizedAccessException) {
-          return Unauthorized(unauthorizedAccessException.Message);
-        }
-        catch (Exception e) {
-          return BadRequest(e.Message);
-        }
-      } else {
-        return BadRequest("Can't find session id in request headers");
-      }
+    [Authorize(AuthenticationSchemes = AuthSchemeConstants.AuthSchemeName)]
+    public async Task<IActionResult> Like(int id) {
+      var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
+      var user = await _userRepository.Get(userId);
+      
+      _contentRepository.Like(id, user);
+      return Ok("Content successfully unliked");
     }
 
     [Route("unlike/{id:int}")]
     [HttpPost]
-    public IActionResult Unlike(int id) {
-      if (Request.Headers.ContainsKey("SessionId")) {
-        var sessionId = Request.Headers["SessionId"].ToString();
-        var user = _context.Sessions.Include(s => s.User).FirstOrDefault(s => s.Id == sessionId)?.User;
-
-        try {
-          _contentRepository.Unlike(id, user);
-          return Ok("Content successfully liked");
-        }
-        catch (ArgumentException argumentException) {
-          return BadRequest(argumentException.Message);
-        }
-        catch (ContentNotFoundException contentNotFoundException) {
-          return NotFound(contentNotFoundException.Message);
-        }
-        catch (UnauthorizedAccessException unauthorizedAccessException) {
-          return Unauthorized(unauthorizedAccessException.Message);
-        }
-      } else {
-        return BadRequest("Can't find session id in request headers");
-      }
+    [Authorize(AuthenticationSchemes = AuthSchemeConstants.AuthSchemeName)]
+    public async Task<IActionResult> Unlike(int id) {
+      var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
+      var user = await _userRepository.Get(userId);
+        
+      _contentRepository.Unlike(id, user);
+      return Ok("Content successfully liked");
     }
 
     [Route("dislike/{id:int}")]
     [HttpPost]
-    public IActionResult Dislike(int id) {
-      if (Request.Headers.ContainsKey("SessionId")) {
-        var sessionId = Request.Headers["SessionId"].ToString();
-        var user = _context.Sessions.Include(s => s.User).FirstOrDefault(s => s.Id == sessionId)?.User;
-
-        try {
-          _contentRepository.Dislike(id, user);
-        }
-        catch (ContentNotFoundException contentNotFoundException) {
-          return NotFound(contentNotFoundException.Message);
-        }
-        catch (UnauthorizedAccessException unauthorizedAccessException) {
-          return Unauthorized(unauthorizedAccessException.Message);
-        }
-        catch (Exception e) {
-          return BadRequest(e.Message);
-        }
-      } else {
-        return BadRequest("Can't find session id in request headers");
-      }
-
-      return Ok();
+    [Authorize(AuthenticationSchemes = AuthSchemeConstants.AuthSchemeName)]
+    public async Task<IActionResult> Dislike(int id) {
+      var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
+      var user = await _userRepository.Get(userId);
+      
+      _contentRepository.Dislike(id, user);
+      return Ok("Content successfully disliked");
     }
 
     [Route("undislike/{id:int}")]
     [HttpPost]
-    public IActionResult Undislike(int id) {
-      if (Request.Headers.ContainsKey("SessionId")) {
-        var sessionId = Request.Headers["SessionId"].ToString();
-        var user = _context.Sessions.Include(s => s.User).FirstOrDefault(s => s.Id == sessionId)?.User;
-
-        try {
-          _contentRepository.Undislike(id, user);
-        }
-        catch (ArgumentException argumentException) {
-          return BadRequest(argumentException.Message);
-        }
-        catch (ContentNotFoundException contentNotFoundException) {
-          return NotFound(contentNotFoundException.Message);
-        }
-        catch (UnauthorizedAccessException unauthorizedAccessException) {
-          return Unauthorized(unauthorizedAccessException.Message);
-        }
-
-        return Ok();
-      } else {
-        return BadRequest("Can't find session id in request headers");
-      }
+    [Authorize(AuthenticationSchemes = AuthSchemeConstants.AuthSchemeName)]
+    public async Task<IActionResult> Undislike(int id) {
+      var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
+      var user = await _userRepository.Get(userId);
+        
+      _contentRepository.Undislike(id, user);
+      return Ok("Content successfully undisliked");
     }
   }
 }

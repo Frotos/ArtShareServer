@@ -4,10 +4,10 @@ using ArtShareServer.Models;
 
 namespace ArtShareServer.Repositories.Interfaces {
   public interface IUserRepository {
-    public User Create(User user);
+    public Task<User> Create(User user);
     public Task<User> Update(User updatedUser);
-    public List<User> GetAll();
-    public User Get(int id);
-    public void Delete(int id);
+    public Task<List<User>> GetAll();
+    public Task<User> Get(int id);
+    public Task Delete(int id);
   }
 }

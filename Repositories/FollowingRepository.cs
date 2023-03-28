@@ -1,5 +1,5 @@
-using System.Linq;
 using System.Threading.Tasks;
+using ArtShareServer.Exceptions;
 using ArtShareServer.Models;
 using ArtShareServer.Repositories.Interfaces;
 using Microsoft.EntityFrameworkCore;
@@ -12,34 +12,44 @@ namespace ArtShareServer.Repositories {
       _context = context;
     }
 
-    public async Task<Following> Create(Following following) {
-      if (following != null) {
-        if (!await _context.Followings.AnyAsync(f => f.FollowUserId == following.FollowUserId &&
-                                                     f.FollowingUserId == following.FollowingUserId)) {
-          _context.Followings.Add(following);
-          await _context.SaveChangesAsync();
-
-          return following;
-        }
+    public async Task<Following> Create(int followUserId, int userId) {
+      if (followUserId <= 0 && followUserId == userId) {
+        throw new BadRequestHttpException("Passed incorrect following");
+      }
+      
+      if (await _context.Followings.AnyAsync(f => f.FollowUserId == followUserId &&
+                                                  f.FollowingUserId == userId)) {
+        throw new BadRequestHttpException("Passed already existed following");
       }
 
-      return null;
+      var following = new Following() {FollowUserId = followUserId, FollowingUserId = userId};
+      
+      await _context.Followings.AddAsync(following);
+      await _context.SaveChangesAsync();
+
+      return following;
     }
 
     public async Task<Following> Get(int id) {
       var following = await _context.Followings.FirstOrDefaultAsync(f => f.Id == id);
 
+      if (following == null) {
+        throw new NotFoundHttpException("Following with passed id not found");
+      }
+
       return following;
     }
 
-    public async Task Delete(int id, User user) {
+    public async Task Delete(int id, int userId) {
       var following = await _context.Followings.FirstOrDefaultAsync(
-          f => f.FollowUserId == id && f.FollowingUserId == user.Id);
+          f => f.FollowUserId == id && f.FollowingUserId == userId);
 
-      if (following != null) {
-        _context.Followings.Remove(following);
-        await _context.SaveChangesAsync();
+      if (following == null) {
+        throw new NotFoundHttpException("Following with passed id not found");
       }
+      
+      _context.Followings.Remove(following);
+      await _context.SaveChangesAsync();
     }
   }
 }

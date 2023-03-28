@@ -16,24 +16,24 @@ namespace ArtShareServer.Repositories {
     }
 
     public async Task<CommentReport> Create(CommentReport report) {
-      if (report != null) {
-        if (_context.CommentReports.Any(r => r.UserId == report.UserId && r.CommentId == report.CommentId)) {
-          throw new AlreadyReportedException("You already reported this comment");
-        }
-
-        _context.CommentReports.Add(report);
-        await _context.SaveChangesAsync();
-
-        return report;
+      if (report.CommentId <= 0 || report.UserId <= 0) {
+        throw new BadRequestHttpException("Passed incorrect report");
+      }
+      
+      if (await _context.CommentReports.AnyAsync(r => r.UserId == report.UserId && r.CommentId == report.CommentId)) {
+        throw new BadRequestHttpException("You already reported this comment");
       }
 
-      return null;
+      await _context.CommentReports.AddAsync(report);
+      await _context.SaveChangesAsync();
+
+      return report;
     }
 
     public async Task<CommentReport> Update(CommentReport updatedReport) {
       //TODO: Check if updated report already exists in db
       if (updatedReport == null) {
-        throw new ArgumentNullException(nameof(updatedReport), "Updated report can't be null");
+        throw new BadRequestHttpException("Updated report can't be null");
       }
 
       var report = await _context.CommentReports.FirstOrDefaultAsync(r => r.Id == updatedReport.Id);
@@ -72,7 +72,7 @@ namespace ArtShareServer.Repositories {
           _context.CommentReports.Remove(report);
           await _context.SaveChangesAsync();
         } else {
-          throw new ArgumentNullException(nameof(report), "Can't delete non-existent report");
+          throw new NotFoundHttpException("Can't delete non-existent report");
         }
       }
     }

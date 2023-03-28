@@ -14,27 +14,33 @@ namespace ArtShareServer.Repositories {
       _context = context;
     }
     
-    public User Create(User user) {
-      if (_context.Users.FirstOrDefault(u => u.Username == user.Username) != null) {
-        throw new UsernameIsTakenException("There is already a user with this username");
+    public async Task<User> Create(User user) {
+      if (await _context.Users.FirstOrDefaultAsync(u => u.Username == user.Username) != null) {
+        throw new BadRequestHttpException("There is already a user with this username");
       }
       
-      if (_context.Users.FirstOrDefault(u => u.Email == user.Email) != null) {
-        throw new EmailIsTakenException("There is already a user with this e-mail");
+      if (await _context.Users.FirstOrDefaultAsync(u => u.Email == user.Email) != null) {
+        throw new BadRequestHttpException("There is already a user with this e-mail");
       }
       
       Avatar avatar = new Avatar() { Image = user.Avatar.Image};
       user.Avatar = avatar;
-      _context.Avatars.Add(avatar);
-      _context.SaveChanges();
-      _context.Users.Add(user);
-      _context.SaveChanges();
+      await _context.Avatars.AddAsync(avatar);
+      await _context.SaveChangesAsync();
+      await _context.Users.AddAsync(user);
+      await _context.SaveChangesAsync();
 
       return user;
     }
 
     public async Task<User> Update(User updatedUser) {
-      var dbUser = await _context.Users.FirstOrDefaultAsync(u => u.Id == updatedUser.Id);
+      var dbUser = await _context.Users
+          .Include(u => u.Avatar)
+          .FirstOrDefaultAsync(u => u.Id == updatedUser.Id);
+
+      if (dbUser == null) {
+        throw new NotFoundHttpException("User with passed id not found");
+      }
 
       dbUser.CopyValues(updatedUser);
       await _context.SaveChangesAsync();
@@ -42,66 +48,64 @@ namespace ArtShareServer.Repositories {
       return dbUser;
     }
 
-    public List<User> GetAll() {
-      var dbUsers = _context.Users.Include(u => u.Avatar)
+    public async Task<List<User>> GetAll() {
+      var dbUsers = await _context.Users.Include(u => u.Avatar)
           .Include(u => u.Likes)
           .Include(u => u.Dislikes)
           .Include(u => u.CommentLikes)
           .Include(u => u.CommentDislikes)
-          .Select(u => u).ToList();
+          .Select(u => u).ToListAsync();
 
       return dbUsers;
     }
 
-    public User Get(int id) {
-      var dbUser = _context.Users.Include(u => u.Avatar)
+    public async Task<User> Get(int id) {
+      var dbUser = await _context.Users.Include(u => u.Avatar)
           .Include(u => u.Likes)
           .Include(u => u.Dislikes)
           .Include(u => u.CommentLikes)
           .Include(u => u.CommentDislikes)
-          .FirstOrDefault(u => u.Id == id);
-
-      // TODO: Maybe delete it
-      if (dbUser != null)
-      {
-        //TODO: Move to another place
-        var imagesCount = _context.Images.Count(i => i.User.Id == dbUser.Id);
-        if (imagesCount >= 0 && imagesCount != dbUser.PostsCount)
-        {
-          dbUser.PostsCount = imagesCount;
-        }
-      
-        //TODO: Move to another place
-        var followersCount = _context.Followings.Count(f => f.FollowUser.Id == dbUser.Id);
-        if (followersCount >= 0 && followersCount != dbUser.FollowersCount)
-        {
-          dbUser.FollowersCount = followersCount;
-        }
-      
-        //TODO: Move to another place
-        var followingsCount = _context.Followings.Count(f => f.FollowingUser.Id == dbUser.Id);
-        if (followingsCount >= 0 && followingsCount != dbUser.FollowingsCount)
-        {
-          dbUser.FollowingsCount = followingsCount;
-        }
-        
-        _context.SaveChanges();
-        
-        return dbUser;
-      }
-
-      return null;
-    }
-
-    public void Delete(int id) {
-      var dbUser = _context.Users.FirstOrDefault(u => u.Id == id);
+          .FirstOrDefaultAsync(u => u.Id == id);
 
       if (dbUser == null) {
-        throw new UserNotFoundException("Can't find user");
+        throw new NotFoundHttpException("User with passed id not found");
+      }
+
+      //TODO: Move to another place
+      var contentCount = await _context.Content.CountAsync(i => i.User.Id == dbUser.Id);
+      if (contentCount >= 0 && contentCount != dbUser.PostsCount)
+      {
+        dbUser.PostsCount = contentCount;
+      }
+      
+      //TODO: Move to another place
+      var followersCount = await _context.Followings.CountAsync(f => f.FollowUser.Id == dbUser.Id);
+      if (followersCount >= 0 && followersCount != dbUser.FollowersCount)
+      {
+        dbUser.FollowersCount = followersCount;
+      }
+      
+      //TODO: Move to another place
+      var followingsCount = await _context.Followings.CountAsync(f => f.FollowingUser.Id == dbUser.Id);
+      if (followingsCount >= 0 && followingsCount != dbUser.FollowingsCount)
+      {
+        dbUser.FollowingsCount = followingsCount;
+      }
+        
+      await _context.SaveChangesAsync();
+        
+      return dbUser;
+    }
+
+    public async Task Delete(int id) {
+      var dbUser = await _context.Users.FirstOrDefaultAsync(u => u.Id == id);
+
+      if (dbUser == null) {
+        throw new NotFoundHttpException("Can't find user");
       }
 
       _context.Users.Remove(dbUser);
-      _context.SaveChanges();
+      await _context.SaveChangesAsync();
     }
   }
 }

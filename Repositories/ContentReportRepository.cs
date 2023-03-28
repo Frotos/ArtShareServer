@@ -1,4 +1,3 @@
-using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading.Tasks;
@@ -16,24 +15,25 @@ namespace ArtShareServer.Repositories {
     }
     
     public async Task<ContentReport> Create(ContentReport report) {
-      if (report != null) {
-        if (_context.ContentReports.Any(r => r.UserId == report.UserId && r.ContentId == report.ContentId)) {
-          throw new AlreadyReportedException("You already reported this content");
-        }
-          
-        _context.ContentReports.Add(report);
-        await _context.SaveChangesAsync();
-
-        return report;
+      if (report.ContentId <= 0 || report.UserId <= 0) {
+        throw new BadRequestHttpException("Passed incorrect report");
       }
+      
+      if (await _context.ContentReports.AnyAsync(r => r.UserId == report.UserId && r.ContentId == report.ContentId)) {
+        throw new BadRequestHttpException("You already reported this content");
+      }
+          
+      // TODO: use try
+      await _context.ContentReports.AddAsync(report);
+      await _context.SaveChangesAsync();
 
-      return null;
+      return report;
     }
 
     public async Task<ContentReport> Update(ContentReport updatedReport) {
       //TODO: Check if updated report already exists in db
       if (updatedReport == null) {
-        throw new ArgumentNullException(nameof(updatedReport), "Updated report can't be null");
+        throw new BadRequestHttpException("Updated report can't be null");
       }
 
       var report = await _context.ContentReports.FirstOrDefaultAsync(r => r.Id == updatedReport.Id);
@@ -72,7 +72,7 @@ namespace ArtShareServer.Repositories {
           _context.ContentReports.Remove(report);
           await _context.SaveChangesAsync();
         } else {
-          throw new ArgumentNullException(nameof(report), "Can't delete non-existent report");
+          throw new NotFoundHttpException("Can't delete non-existent report");
         }
       }
     }

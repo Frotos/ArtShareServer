@@ -3,5 +3,6 @@ namespace ArtShareServer.Models.Requests {
     public string[] SearchPhrases { get; set; }
     public bool Favourites { get; set; }
     public int AuthorId { get; set; }
+    public bool UploadedByUser { get; set; }
   }
 }

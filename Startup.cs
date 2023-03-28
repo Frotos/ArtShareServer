@@ -1,4 +1,7 @@
-using System;
+using ArtShareServer.Infrastructure;
+using ArtShareServer.Infrastructure.Authentication;
+using ArtShareServer.Infrastructure.Authentication.Models;
+using ArtShareServer.Infrastructure.Middlewares;
 using ArtShareServer.Repositories;
 using ArtShareServer.Repositories.Interfaces;
 using Microsoft.AspNetCore.Builder;
@@ -11,22 +14,24 @@ using Microsoft.OpenApi.Models;
 
 namespace ArtShareServer {
   public class Startup {
+    private IConfiguration Configuration { get; }
+    
     public Startup(IConfiguration configuration) {
       Configuration = configuration;
     }
-
-    public IConfiguration Configuration { get; }
-
-    // This method gets called by the runtime. Use this method to add services to the container.
+    
     public void ConfigureServices(IServiceCollection services) {
       string connection = Configuration.GetConnectionString("DefaultConnection");
+      var jwtTokenConfig = Configuration.GetSection("JwtTokenConfig").Get<TokenConfig>();
       services.AddMvc();
       services.AddDbContext<EFDBContext>(options => options.UseSqlServer(connection));
       
       services.AddControllersWithViews()
         .AddNewtonsoftJson(options => 
             options.SerializerSettings.ReferenceLoopHandling = Newtonsoft.Json.ReferenceLoopHandling.Ignore);
-
+      
+      services.AddSingleton(jwtTokenConfig);
+      services.AddSingleton<Mapper>();
       services.AddScoped<ICommentRepository, CommentRepository>();
       services.AddScoped<IContentRepository, ContentRepository>();
       services.AddScoped<ISessionRepository, SessionRepository>();
@@ -38,23 +43,27 @@ namespace ArtShareServer {
       services.AddSwaggerGen(c => {
       c.SwaggerDoc("v1", new OpenApiInfo { Title = "ArtShareServer", Version = "v1" });
       });
-    }
 
-    // This method gets called by the runtime. Use this method to configure the HTTP request pipeline.
+      services.AddAuthentication(options => options.DefaultScheme = AuthSchemeConstants.AuthSchemeName)
+          .AddScheme<AuthSchemeOptions, AuthHandler>(
+              AuthSchemeConstants.AuthSchemeName, options => {});
+    }
+    
     public void Configure(IApplicationBuilder app, IWebHostEnvironment env) {
       if (env.IsDevelopment()) {
         app.UseDeveloperExceptionPage();
         app.UseSwagger();
         app.UseSwaggerUI(c => {
           c.SwaggerEndpoint("/swagger/v1/swagger.json", "ArtShareServer v1");
-          // c.RoutePrefix = String.Empty;
         });
       }
 
       // app.UseHttpsRedirection();
 
       app.UseRouting();
+      app.UseMiddleware<ExceptionMiddleware>();
 
+      app.UseAuthentication();
       app.UseAuthorization();
 
       app.UseEndpoints(endpoints => { endpoints.MapControllers(); });

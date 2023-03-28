@@ -1,21 +1,17 @@
-using System.Linq;
+using System.Security.Claims;
 using System.Threading.Tasks;
-using ArtShareServer.Models;
+using ArtShareServer.Infrastructure.Authentication.Models;
 using ArtShareServer.Repositories.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using Newtonsoft.Json;
-using Newtonsoft.Json.Linq;
 
 namespace ArtShareServer.Controllers {
   [ApiController]
   [Route("api/[controller]")]
   public class FollowingsController : ControllerBase {
-    private readonly EFDBContext _context;
     private readonly IFollowingRepository _followingRepository;
-    
-    public FollowingsController(EFDBContext context, IFollowingRepository followingRepository) {
-      _context = context;
+
+    public FollowingsController(IFollowingRepository followingRepository) {
       _followingRepository = followingRepository;
     }
 
@@ -24,52 +20,27 @@ namespace ArtShareServer.Controllers {
     public async Task<IActionResult> Get(int id) {
       var following = await _followingRepository.Get(id);
 
-      if (following != null) {
-        return Ok(JsonConvert.SerializeObject(following));
-      } else {
-        return NotFound("Following with passed id doesn't exist");
-      }
+      return Ok(following);
     }
 
+    [Route("{id:int}")]
     [HttpPost]
-    public async Task<IActionResult> Create(Following following) {
-      if (Request.Headers.ContainsKey("SessionId")) {
-        var sessionId = Request.Headers["SessionId"].ToString();
-        var user = _context.Sessions.Include(s => s.User).FirstOrDefault(s => s.Id == sessionId)?.User;
-
-        if (user != null && following.FollowingUserId == user.Id) {
-          var createdFollowing = await _followingRepository.Create(following);
-
-          if (createdFollowing != null) {
-            JObject jObject = new JObject {{"id", new JValue(following.Id)}};
-            return Ok(jObject.ToString());
-          } else {
-            return BadRequest();
-          }
-        } else {
-          return BadRequest("You can't follow another user using not yours account");
-        }
-      } else {
-        return BadRequest("Can't find session id in request headers");
-      }
+    [Authorize(AuthenticationSchemes = AuthSchemeConstants.AuthSchemeName)]
+    public async Task<IActionResult> Follow(int id) {
+      var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
+      var createdFollowing = await _followingRepository.Create(id, userId);
+      
+      return Ok(new {createdFollowing.Id});
     }
 
     [Route("{id:int}")]
     [HttpDelete]
-    public async Task<IActionResult> Delete(int id) {
-      if (Request.Headers.ContainsKey("SessionId")) {
-        var sessionId = Request.Headers["SessionId"].ToString();
-        var user = _context.Sessions.Include(s => s.User).FirstOrDefault(s => s.Id == sessionId)?.User;
+    [Authorize(AuthenticationSchemes = AuthSchemeConstants.AuthSchemeName)]
+    public async Task<IActionResult> Unfollow(int id) {
+      var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
 
-        if (user != null) {
-          await _followingRepository.Delete(id, user);
-          return Ok();
-        } else {
-          return BadRequest("You can't follow another user using not yours account");
-        }
-      } else {
-        return BadRequest("Can't find session id in request headers");
-      }
+      await _followingRepository.Delete(id, userId);
+      return Ok();
     }
   }
 }

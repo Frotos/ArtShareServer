@@ -1,76 +1,47 @@
-using System.Linq;
+using System.Security.Claims;
 using System.Threading.Tasks;
+using ArtShareServer.Infrastructure.Authentication.Models;
 using ArtShareServer.Models;
 using ArtShareServer.Repositories.Interfaces;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.EntityFrameworkCore;
-using Newtonsoft.Json;
 
 namespace ArtShareServer.Controllers {
   [ApiController]
   [Route("api/[controller]")]
   public class UserController : ControllerBase {
-    //TODO: Remove this db context
-    private readonly EFDBContext _context;
     private readonly IUserRepository _userRepository;
 
-    public UserController(EFDBContext context, IUserRepository userRepository) {
-      _context = context;
+    public UserController(IUserRepository userRepository) {
       _userRepository = userRepository;
     }
-
-    //TODO: Maybe create only one method to get user, and just put user id in headers in client app
+    
     [Route("session_user")]
     [HttpGet]
+    [Authorize(AuthenticationSchemes = AuthSchemeConstants.AuthSchemeName)]
     public async Task<IActionResult> Get() {
-      if (Request.Headers.ContainsKey("SessionId")) {
-        var sessionId = Request.Headers["SessionId"].ToString();
-        var userId = await _context.Sessions.Where(s => s.Id == sessionId).Select(s => s.UserId).FirstOrDefaultAsync();
-
-        var user = _userRepository.Get(userId);
-
-        if (user != null) {
-          return Ok(JsonConvert.SerializeObject(user));
-        } else {
-          return NotFound("User not found");
-        }
-      } else {
-        return BadRequest("Can't find session id in request headers");
-      }
+      var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
+      var user = await _userRepository.Get(userId);
+        
+      return Ok(user);
     }
 
     [HttpPut]
+    [Authorize(AuthenticationSchemes = AuthSchemeConstants.AuthSchemeName)]
     public async Task<IActionResult> Update([FromBody] User updatedUser) {
-      if (Request.Headers.ContainsKey("SessionId")) {
-        var sessionId = Request.Headers["SessionId"].ToString();
-        var userId = await _context.Sessions.Where(s => s.Id == sessionId && s.UserId == updatedUser.Id).Select(s => s.UserId).FirstOrDefaultAsync();
-
-        var user = _userRepository.Get(userId);
-
-        if (user != null) {
-          await _userRepository.Update(updatedUser);
-          return Ok(JsonConvert.SerializeObject(user));
-        } else {
-          return NotFound("User not found");
-        }
-      } else {
-        return BadRequest("Can't find session id in request headers");
-      }
+      await _userRepository.Update(updatedUser);
+      return Ok(updatedUser);
     }
 
     //TODO: Test it
     [Route("{id:int}")]
     [HttpDelete]
-    public async Task<IActionResult> Update(int id) {
-      if (Request.Headers.ContainsKey("SessionId")) {
-        var sessionId = Request.Headers["SessionId"].ToString();
-        var userId = await _context.Sessions.Where(s => s.Id == sessionId && s.UserId == id).Select(s => s.UserId).FirstOrDefaultAsync();
-
-        _userRepository.Delete(userId);
-        return Ok();
-      } else {
-        return BadRequest("Can't find session id in request headers");
-      }
+    [Authorize(AuthenticationSchemes = AuthSchemeConstants.AuthSchemeName)]
+    public async Task<IActionResult> Delete(int id) {
+      var userId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
+      
+      await _userRepository.Delete(userId);
+      return Ok();
     }
   }
 }

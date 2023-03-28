@@ -1,40 +1,46 @@
 using System;
+using System.Collections.Generic;
+using System.IdentityModel.Tokens.Jwt;
 using System.Linq;
-using System.Security.Cryptography;
+using System.Security.Claims;
+using System.Text;
 using System.Threading.Tasks;
 using ArtShareServer.Exceptions;
+using ArtShareServer.Infrastructure.Authentication.Models;
 using ArtShareServer.Models;
 using ArtShareServer.Repositories.Interfaces;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.IdentityModel.Tokens;
 
 namespace ArtShareServer.Repositories {
   public class SessionRepository : ISessionRepository {
     private readonly EFDBContext _context;
-
-    private const int KEY_LENGTH = 64;
-    private readonly char[] _encoding = {
-      'a', 'b', 'c', 'd', 'e', 'f', 'g', 'h', 'i', 'j', 'k', 'l', 'm',
-      'n', 'o', 'p', 'q', 'r', 's', 't', 'u', 'v', 'w', 'x', 'y', 'z',
-      '0', '1', '2', '3', '4', '5' };
-
-    public SessionRepository(EFDBContext context) {
+    private readonly TokenConfig _tokenConfig;
+    private readonly byte[] _secret;
+    
+    public SessionRepository(EFDBContext context, TokenConfig tokenConfig) {
       _context = context;
+      _tokenConfig = tokenConfig;
+      _secret = Encoding.ASCII.GetBytes(_tokenConfig.Secret);
     }
     
-    public async Task<Session> Create(int userId) {
-      var session = new Session();
+    public async Task<Session> Create(User user) {
+      if (user == null) {
+        throw new BadRequestHttpException("User can't be null");
+      }
+
+      var created = DateTime.Now.ToString("dd/MM/yyyy HH:mm:ss"); 
       
-      do
-      {
-        session.Id = GenerateSessionId();
-      } while (_context.Sessions.FirstOrDefault(s => s.Id == session.Id) != null);
-    
-      session.UserId = userId;
-      session.Created = DateTime.Now.ToString("dd/MM/yyyy HH:mm:ss");
-      session.Last = session.Created;
-    
-      _context.Sessions.Add(session);
-      await _context.SaveChangesAsync();
+      var session = new Session() {
+        Token = GenerateToken(user),
+        Created = created,
+        Last = created
+      };
+
+      if (await _context.Sessions.FirstOrDefaultAsync(s => s.Token == session.Token) == null) {
+        await _context.Sessions.AddAsync(session);
+        await _context.SaveChangesAsync();
+      }
 
       return session;
     }
@@ -46,22 +52,14 @@ namespace ArtShareServer.Repositories {
         session.Copy(updatedSession);
         await _context.SaveChangesAsync();
       } else {
-        throw new SessionNotFoundException("Session with passed id doesn't exist");
+        throw new NotFoundHttpException("Session with passed id doesn't exist");
       }
 
       return session;
     }
 
-    public async Task<Session> Update(string id, int userId = 0, User user = null, string ip = null, string last = null) {
-      var session = await Get(id);
-
-      if (userId != 0) {
-        session.UserId = userId;
-      }
-
-      if (user != null) {
-        session.User = user;
-      }
+    public async Task<Session> Update(string token, string ip = null, string last = null) {
+      var session = await Get(token);
 
       if (ip != null) {
         session.Ip = ip;
@@ -76,38 +74,38 @@ namespace ArtShareServer.Repositories {
       return session;
     }
 
-    public async void Delete(string id, User user) {
-      var session = await Get(id);
+    public async Task Delete(string token) {
+      var session = await Get(token);
 
       if (session != null) {
-        if (session.User == user) {
-          _context.Sessions.Remove(session);
-          await _context.SaveChangesAsync(); 
-        } else {
-          throw new UnauthorizedAccessException("You can't delete a session that doesn't belong to you");
-        }
+        _context.Sessions.Remove(session);
+        await _context.SaveChangesAsync();
       } else {
-        throw new SessionNotFoundException("Session with passed id doesn't exist");
+        throw new NotFoundHttpException("Session with passed token doesn't exist");
       }
     }
 
-    public async Task<Session> Get(string id) {
-      return await _context.Sessions.Include(s => s.User).FirstOrDefaultAsync(s => s.Id == id);
+    public async Task<Session> Get(string token) {
+      return await _context.Sessions.FirstOrDefaultAsync(s => s.Token == token);
     }
 
-    private string GenerateSessionId() {
-      char[] identifier = new char[KEY_LENGTH];
-      byte[] randomData = new byte[KEY_LENGTH];
-      using (RNGCryptoServiceProvider rng = new RNGCryptoServiceProvider())
-      {
-        rng.GetBytes(randomData);
-      }
-      for (int i = 0; i < identifier.Length; i++)
-      {
-        int pos = randomData[i] % _encoding.Length;
-        identifier[i] = _encoding[pos];
-      }
-      return new string(identifier);
+    private List<Claim> GenerateClaimsIdentity(User user) {
+      var claims = new List<Claim> {
+        new(ClaimTypes.NameIdentifier, user.Id.ToString()),
+      };
+
+      return claims;
+    }
+
+    private string GenerateToken(User user) {
+      var token = new JwtSecurityToken(
+          issuer: _tokenConfig.Issuer,
+          audience: _tokenConfig.Audience,
+          claims: GenerateClaimsIdentity(user),
+          signingCredentials: new SigningCredentials(new SymmetricSecurityKey(_secret), SecurityAlgorithms.HmacSha256));
+      var encodedToken = new JwtSecurityTokenHandler().WriteToken(token);
+      
+      return encodedToken;
     }
   }
 }
